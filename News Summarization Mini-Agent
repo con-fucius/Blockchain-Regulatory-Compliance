@@ -1,140 +1,151 @@
+# Install required packages
+!pip install openai langchain requests pandas nltk matplotlib pyLDAvis gensim
+
+import openai
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+import json
 from langchain.llms import OpenAI
-from langchain.chains import SequentialChain
+from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
-from google.cloud import language_v1
+from langchain.chains import LLMChain
+from langchain.schema import HumanMessage
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from gensim import corpora
+from gensim.models import LdaModel
+import nltk
 
-def get_news_articles(source_url):
-    """
-    Fetches news articles from a specified source URL.
+# Initialize OpenAI API key
+openai.api_key = 'your-openai-api-key'
 
-    Args:
-        source_url: URL of the news source (e.g., RSS feed).
+# NewsAPI endpoint and API key (for additional news source)
+NEWS_API_KEY = 'your-news-api-key'
+NEWS_API_URL = "https://newsapi.org/v2/everything"
 
-    Returns:
-        A list of news articles (strings).
-    """
-    try:
-        import requests  # Import requests library within the function
-        response = requests.get(source_url)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        # Parse the RSS feed or news API response 
-        # (This part  depends on the specific source URL format)
-        # ...
-        articles = extract_articles_from_response(response.content) 
-        return articles
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching news articles: {e}")
+# CurrentsAPI (alternative source)
+CURRENTS_API_KEY = 'your-currents-api-key'
+CURRENTS_API_URL = "https://api.currentsapi.services/v1/search"
+
+# Fetch Blockchain News from NewsAPI
+def fetch_blockchain_news():
+    params = {
+        'q': 'blockchain',
+        'language': 'en',
+        'sortBy': 'publishedAt',
+        'apiKey': NEWS_API_KEY
+    }
+    response = requests.get(NEWS_API_URL, params=params)
+    data = response.json()
+    if data.get('status') == 'ok':
+        return data['articles']
+    else:
         return []
 
+# Fetch Blockchain News from Currents API (Alternative source)
+def fetch_blockchain_news_currents():
+    params = {
+        'keywords': 'blockchain',
+        'language': 'en',
+        'apiKey': CURRENTS_API_KEY
+    }
+    response = requests.get(CURRENTS_API_URL, params=params)
+    data = response.json()
+    if data.get('status') == 'ok':
+        return data['news']
+    else:
+        return []
+
+# Combine results from both APIs
+def fetch_combined_news():
+    news_from_newsapi = fetch_blockchain_news()
+    news_from_currents = fetch_blockchain_news_currents()
+    return news_from_newsapi + news_from_currents
+
+# Summarize Articles Using OpenAI's LLM
+llm = OpenAI(model="text-davinci-003", temperature=0.7)
+
 def summarize_article(article):
-    """
-    Summarizes the news article using a powerful LLM.
+    prompt = f"Summarize the following article:\n{article['title']}\n{article['description']}\n{article['content']}"
+    summary = llm(prompt)
+    return summary
 
-    Args:
-        article: The news article text.
-
-    Returns:
-        The summary of the article.
-    """
-    llm_summarization = OpenAI(model_name="text-davinci-003") 
-    prompt = PromptTemplate(
-        input_variables=["article"],
-        template="""
-        **Prompt:** Summarize the following news article:
-
-        {article}
-
-        **Summary:** 
-        """
-    )
-    summarization_chain = SequentialChain(llm=llm_summarization, prompt=prompt)
-    return summarization_chain.run(article=article)
+# Sentiment Analysis Using GPT-3.5-turbo for Sentiment
+sentiment_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 
 def analyze_sentiment(text):
-    """
-    Analyzes the sentiment of the given text using Google Cloud Natural Language API.
+    prompt = f"Determine the sentiment of the following text. The sentiment can be either Positive, Negative, or Neutral:\n{text}"
+    response = sentiment_llm([HumanMessage(content=prompt)])
+    sentiment = response.content.strip().lower()
+    return sentiment
 
-    Args:
-        text: The text to analyze.
+# Process News Articles to Summarize and Analyze Sentiment
+def process_articles(articles):
+    summarized_articles = [(article['title'], summarize_article(article)) for article in articles]
+    sentiments = [(title, summarize, analyze_sentiment(summarize)) for title, summarize in summarized_articles]
+    return summarized_articles, sentiments
 
-    Returns:
-        A tuple containing the sentiment score and magnitude.
-    """
-    client = language_v1.LanguageServiceClient()
-    document = language_v1.Document(content=text, type_=language_v1.Document.Type.PLAIN_TEXT)
-    sentiment = client.analyze_sentiment(document=document).document_sentiment
-    return sentiment.score, sentiment.magnitude
+# Topic Modeling (LDA)
+nltk.download('punkt')
+nltk.download('stopwords')
 
-def get_article_sentiment(article):
-    """
-    Gets the sentiment of a news article using a sentiment analysis LLM.
+def preprocess_text(text):
+    tokens = word_tokenize(text.lower())
+    stop_words = set(stopwords.words('english'))
+    return [word for word in tokens if word.isalpha() and word not in stop_words]
 
-    Args:
-        article: The news article text.
+def perform_topic_modeling(texts, num_topics=3):
+    processed_texts = [preprocess_text(text) for text in texts]
+    dictionary = corpora.Dictionary(processed_texts)
+    corpus = [dictionary.doc2bow(text) for text in processed_texts]
+    lda_model = LdaModel(corpus, num_topics=num_topics, id2word=dictionary, passes=15)
+    topics = lda_model.print_topics(num_words=5)
+    return topics
 
-    Returns:
-        The sentiment of the article (e.g., "positive", "negative", "neutral").
-    """
-    llm_sentiment = OpenAI(model_name="gpt-3.5-turbo") 
-    prompt = PromptTemplate(
-        input_variables=["text"],
-        template="""
-        **Prompt:** Analyze the sentiment of the following text:
+# Plotting Sentiment Distribution
+def plot_sentiment_distribution(sentiments):
+    sentiment_counts = pd.Series([s[2] for s in sentiments]).value_counts()
+    sentiment_counts.plot(kind='bar', color=['green', 'red', 'gray'])
+    plt.title("Sentiment Distribution of Blockchain News")
+    plt.ylabel("Count")
+    plt.xlabel("Sentiment")
+    plt.show()
 
-        {text}
+# Trend Analysis - Enhanced with Sentiment Weighting
+def identify_trend(sentiment_counts):
+    sentiment_weights = {'positive': 1, 'neutral': 0, 'negative': -1}
+    weighted_sentiment = sum([sentiment_weights.get(sentiment, 0) for sentiment in sentiment_counts])
+    
+    if weighted_sentiment > 0:
+        return "Bullish"
+    elif weighted_sentiment < 0:
+        return "Bearish"
+    else:
+        return "Neutral"
 
-        **Sentiment:** 
-        """
-    )
-    sentiment_chain = SequentialChain(llm=llm_sentiment, prompt=prompt)
-    sentiment_text = sentiment_chain.run(text=article)
-    return sentiment_text
+# Main Execution
 
-def analyze_market_sentiment(articles):
-    """
-    Analyzes the overall market sentiment based on the sentiment of multiple news articles.
+# Fetch combined blockchain news
+articles = fetch_combined_news()
 
-    Args:
-        articles: A list of news articles.
+# Summarize and analyze sentiment of articles
+summarized_articles, sentiments = process_articles(articles)
 
-    Returns:
-        The prevailing market sentiment (e.g., "bullish", "bearish", "neutral").
-    """
-    sentiments = []
-    for article in articles:
-        sentiment = get_article_sentiment(article)
-        sentiments.append(sentiment)
-    # Determine overall market sentiment based on the distribution of sentiments
-    # (e.g., majority positive -> bullish, majority negative -> bearish)
-    # ...
-    return "bullish"  # Placeholder 
+# Extract text for topic modeling (use summaries for topic modeling)
+texts_for_topic_modeling = [summarize for _, summarize in summarized_articles]
+topics = perform_topic_modeling(texts_for_topic_modeling)
 
-# Example usage
-# Replace with your actual news source URL
-news_source_url = "https://www.coindesk.com/feed/" 
-# You'll need to implement the `extract_articles_from_response` function based on the specific format of the news source's API response. 
-# For example, if you're using an RSS feed, you'll need to parse the XML to extract the article titles and content.
+# Display identified topics
+print("Identified Topics:")
+for topic in topics:
+    print(topic)
 
-def extract_articles_from_response(response_content):
-    # Implement this function based on the news source's API response format
-    # For example, if using an RSS feed:
-    from bs4 import BeautifulSoup
-    import feedparser
+# Sentiment Distribution Visualization
+plot_sentiment_distribution(sentiments)
 
-    feed = feedparser.parse(response_content)
-    articles = []
-    for entry in feed.entries:
-        articles.append(entry.summary) 
-    return articles
+# Trend Identification
+sentiment_counts = pd.Series([s[2] for s in sentiments]).value_counts()
+overall_trend = identify_trend(sentiment_counts)
+print(f"Overall Market Sentiment: {overall_trend}")
 
-articles = get_news_articles(news_source_url)
-
-if articles:
-    for article in articles:
-        summary = summarize_article(article)
-        print(f"Article Summary: {summary}")
-        sentiment = get_article_sentiment(article)
-        print(f"Article Sentiment: {sentiment}")
-
-    market_sentiment = analyze_market_sentiment(articles)
-    print(f"Market Sentiment: {market_sentiment}")
