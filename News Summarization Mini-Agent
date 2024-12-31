@@ -1,0 +1,140 @@
+from langchain.llms import OpenAI
+from langchain.chains import SequentialChain
+from langchain.prompts import PromptTemplate
+from google.cloud import language_v1
+
+def get_news_articles(source_url):
+    """
+    Fetches news articles from a specified source URL.
+
+    Args:
+        source_url: URL of the news source (e.g., RSS feed).
+
+    Returns:
+        A list of news articles (strings).
+    """
+    try:
+        import requests  # Import requests library within the function
+        response = requests.get(source_url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        # Parse the RSS feed or news API response 
+        # (This part  depends on the specific source URL format)
+        # ...
+        articles = extract_articles_from_response(response.content) 
+        return articles
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching news articles: {e}")
+        return []
+
+def summarize_article(article):
+    """
+    Summarizes the news article using a powerful LLM.
+
+    Args:
+        article: The news article text.
+
+    Returns:
+        The summary of the article.
+    """
+    llm_summarization = OpenAI(model_name="text-davinci-003") 
+    prompt = PromptTemplate(
+        input_variables=["article"],
+        template="""
+        **Prompt:** Summarize the following news article:
+
+        {article}
+
+        **Summary:** 
+        """
+    )
+    summarization_chain = SequentialChain(llm=llm_summarization, prompt=prompt)
+    return summarization_chain.run(article=article)
+
+def analyze_sentiment(text):
+    """
+    Analyzes the sentiment of the given text using Google Cloud Natural Language API.
+
+    Args:
+        text: The text to analyze.
+
+    Returns:
+        A tuple containing the sentiment score and magnitude.
+    """
+    client = language_v1.LanguageServiceClient()
+    document = language_v1.Document(content=text, type_=language_v1.Document.Type.PLAIN_TEXT)
+    sentiment = client.analyze_sentiment(document=document).document_sentiment
+    return sentiment.score, sentiment.magnitude
+
+def get_article_sentiment(article):
+    """
+    Gets the sentiment of a news article using a sentiment analysis LLM.
+
+    Args:
+        article: The news article text.
+
+    Returns:
+        The sentiment of the article (e.g., "positive", "negative", "neutral").
+    """
+    llm_sentiment = OpenAI(model_name="gpt-3.5-turbo") 
+    prompt = PromptTemplate(
+        input_variables=["text"],
+        template="""
+        **Prompt:** Analyze the sentiment of the following text:
+
+        {text}
+
+        **Sentiment:** 
+        """
+    )
+    sentiment_chain = SequentialChain(llm=llm_sentiment, prompt=prompt)
+    sentiment_text = sentiment_chain.run(text=article)
+    return sentiment_text
+
+def analyze_market_sentiment(articles):
+    """
+    Analyzes the overall market sentiment based on the sentiment of multiple news articles.
+
+    Args:
+        articles: A list of news articles.
+
+    Returns:
+        The prevailing market sentiment (e.g., "bullish", "bearish", "neutral").
+    """
+    sentiments = []
+    for article in articles:
+        sentiment = get_article_sentiment(article)
+        sentiments.append(sentiment)
+    # Determine overall market sentiment based on the distribution of sentiments
+    # (e.g., majority positive -> bullish, majority negative -> bearish)
+    # ...
+    return "bullish"  # Placeholder 
+
+# Example usage
+# Replace with your actual news source URL
+news_source_url = "https://www.coindesk.com/feed/" 
+# You'll need to implement the `extract_articles_from_response` function based on the specific format of the news source's API response. 
+# For example, if you're using an RSS feed, you'll need to parse the XML to extract the article titles and content.
+
+def extract_articles_from_response(response_content):
+    # Implement this function based on the news source's API response format
+    # For example, if using an RSS feed:
+    from bs4 import BeautifulSoup
+    import feedparser
+
+    feed = feedparser.parse(response_content)
+    articles = []
+    for entry in feed.entries:
+        articles.append(entry.summary) 
+    return articles
+
+articles = get_news_articles(news_source_url)
+
+if articles:
+    for article in articles:
+        summary = summarize_article(article)
+        print(f"Article Summary: {summary}")
+        sentiment = get_article_sentiment(article)
+        print(f"Article Sentiment: {sentiment}")
+
+    market_sentiment = analyze_market_sentiment(articles)
+    print(f"Market Sentiment: {market_sentiment}")
