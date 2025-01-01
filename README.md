@@ -1,6 +1,6 @@
-# AML Blockchain System
+# AML System
 
-This project implements an **Anti-Money Laundering (AML) system** for blockchain transactions using **LangChain** and **OpenAI**. The system flags suspicious transactions based on volume, known addresses, and metadata using a large language model.
+This project implements an Anti-Money Laundering (AML) system for blockchain transactions using LangChain and OpenAI. The system flags suspicious transactions based on volume, known addresses, and metadata using a large language model.
 
 ## Prerequisites
 
@@ -17,11 +17,10 @@ git clone https://github.com/confucius/aml-system.git
 pip install -r requirements.txt
 
 
-3. Create a `.env` file with your OpenAI API Key:
+3. Create a `.env` file with your API key and specify your threshold:
 OPENAI_API_KEY=__
-AML_THRESHOLD=1000000
+AML_THRESHOLD=_
 
 
 4. Run the AML analysis:
 python aml_system.py
-
