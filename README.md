@@ -4,7 +4,7 @@ This project implements an Anti-Money Laundering (AML) system for blockchain tra
 
 ## Prerequisites
 
-- Python 3.x
+- Python 3.12
 - OpenAI API Key (or another LLM provider)
 - LangChain library
 
